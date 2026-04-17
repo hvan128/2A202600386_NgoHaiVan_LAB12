@@ -1,0 +1,75 @@
+name: Deploy to Railway
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '06-lab-complete/**'
+      - '.github/workflows/deploy-railway.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: railway-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: 06-lab-complete
+
+    env:
+      RAILWAY_URL: https://day12-agent-production-a0dc.up.railway.app
+      RAILWAY_SERVICE: day12-agent
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: 06-lab-complete/requirements.txt
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Smoke test — import app
+        env:
+          AGENT_API_KEY: ci-dummy
+          JWT_SECRET: ci-dummy
+        run: |
+          python -c "from app.main import app; print(f'OK: {len(app.routes)} routes')"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Railway CLI
+        run: npm i -g @railway/cli
+
+      - name: Deploy
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: railway up --service "$RAILWAY_SERVICE" --ci
+
+      - name: Wait for /health = 200
+        run: |
+          for i in $(seq 1 30); do
+            status=$(curl -s -o /dev/null -w "%{http_code}" "$RAILWAY_URL/health")
+            echo "[$i] /health = $status"
+            if [ "$status" = "200" ]; then
+              echo "Deploy verified"
+              curl -s "$RAILWAY_URL/health"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Timeout: /health not 200 after 5 minutes"
+          exit 1
