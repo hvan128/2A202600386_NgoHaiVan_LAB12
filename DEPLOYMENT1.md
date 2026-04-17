@@ -26,8 +26,33 @@ standalone bằng `docker compose up`.
 - **Public URL:** https://day12-agent-production-a0dc.up.railway.app
 - **Swagger UI:** https://day12-agent-production-a0dc.up.railway.app/docs
 - **Redis:** Railway-managed instance, linked vào `day12-agent` service qua `REDIS_URL=${{Redis.REDIS_URL}}`
-- **CI/CD:** GitHub Actions `.github/workflows/deploy-railway.yml` — push `main` → auto deploy + smoke test (1m24s)
-- **API key:** lấy bằng `railway variables --service day12-agent --kv | grep AGENT_API_KEY`
+- **LLM:** OpenAI `gpt-4o-mini` thật (không còn mock) — `OPENAI_API_KEY` set server-side, grader không cần
+- **CI/CD:** GitHub Actions `.github/workflows/deploy-railway.yml` — push `main` → auto deploy + smoke test (~1m)
+
+---
+
+## Demo API Key (dùng cho grader chấm Lab 12)
+
+Key dưới đây để test `/ask`, `/metrics`, `/history/{user_id}` qua curl/Postman/Swagger.
+Các endpoint public (`/health`, `/ready`, `/docs`) không cần key.
+
+```
+AGENT_API_KEY=c85d2c73ad1906cd5828943dd79b5ef5e99350103bcde32b34011f75ee945bc0
+```
+
+Cách dùng với Swagger UI:
+1. Mở https://day12-agent-production-a0dc.up.railway.app/docs
+2. Click nút **🔒 Authorize** ở góc phải
+3. Paste key vào ô `ApiKeyHeader (X-API-Key)` → **Authorize** → **Close**
+4. Click "Try it out" trên `POST /ask` hoặc `GET /metrics` → điền body → **Execute**
+
+Bảo vệ khỏi abuse:
+- **Rate limit** — 20 req/min/user (Redis sorted set sliding window, consistent qua mọi instance)
+- **Cost guard** — $10/day global (gpt-4o-mini ~$0.0002/req → đủ ~50k req/ngày)
+- **Key rotate** — sau deadline 17/4/2026:
+  ```bash
+  railway variables --service day12-agent --set "AGENT_API_KEY=$(openssl rand -hex 32)"
+  ```
 
 ---
 
@@ -93,7 +118,7 @@ Tham khảo `03-cloud-deployment/production-cloud-run/` để biết
 
 ```bash
 BASE=https://day12-agent-production-a0dc.up.railway.app
-API_KEY=<AGENT_API_KEY-từ-railway-variables>
+API_KEY=c85d2c73ad1906cd5828943dd79b5ef5e99350103bcde32b34011f75ee945bc0
 
 # 1. Health — phải thấy storage=redis, redis_connected=true
 curl $BASE/health
